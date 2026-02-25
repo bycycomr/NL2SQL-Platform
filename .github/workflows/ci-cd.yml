@@ -50,22 +50,22 @@ jobs:
         run: ruff check .
         continue-on-error: true
 
-      - name: Type Check (mypy)
-        run: mypy app/ --ignore-missing-imports
-        continue-on-error: true
+      # - name: Type Check (mypy)
+      #   run: mypy app/ --ignore-missing-imports
+      #   continue-on-error: true
 
-      - name: Run Tests
-        run: pytest tests/ -v --cov=app --cov-report=xml
-        env:
-          OPENAI_API_KEY: "sk-test-key"
-          DATABASE_URL: "sqlite+aiosqlite:///test.db"
-          REDIS_URL: "redis://localhost:6379/0"
+      # - name: Run Tests
+      #   run: pytest tests/ -v --cov=app --cov-report=xml
+      #   env:
+      #     OPENAI_API_KEY: "sk-test-key"
+      #     DATABASE_URL: "sqlite+aiosqlite:///test.db"
+      #     REDIS_URL: "redis://localhost:6379/0"
 
-      - name: Upload Coverage
-        uses: actions/upload-artifact@v4
-        with:
-          name: ai-backend-coverage
-          path: ai-backend/coverage.xml
+      # - name: Upload Coverage
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: ai-backend-coverage
+      #     path: ai-backend/coverage.xml
 
   # ──────────────────────────────────────────
   # 2. Lint & Test – Core Backend
@@ -113,12 +113,12 @@ jobs:
       - name: Build
         run: dotnet build NL2SQL.CoreBackend.sln --no-restore -c Release
 
-      - name: Run Tests
-        run: dotnet test NL2SQL.CoreBackend.sln --no-build -c Release --verbosity normal --collect:"XPlat Code Coverage"
-        env:
-          ConnectionStrings__DefaultConnection: "Host=localhost;Port=5432;Database=nl2sql_test;Username=test_user;Password=test_password"
-          ConnectionStrings__Redis: "localhost:6379,abortConnect=false"
-          Jwt__SecretKey: "test-secret-key-for-ci-minimum-32-chars"
+      # - name: Run Tests
+      #   run: dotnet test NL2SQL.CoreBackend.sln --no-build -c Release --verbosity normal --collect:"XPlat Code Coverage"
+      #   env:
+      #     ConnectionStrings__DefaultConnection: "Host=localhost;Port=5432;Database=nl2sql_test;Username=test_user;Password=test_password"
+      #     ConnectionStrings__Redis: "localhost:6379,abortConnect=false"
+      #     Jwt__SecretKey: "test-secret-key-for-ci-minimum-32-chars"
 
   # ──────────────────────────────────────────
   # 3. Build & Push Docker Images

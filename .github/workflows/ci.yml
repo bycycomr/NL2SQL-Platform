@@ -36,7 +36,8 @@ jobs:
       - name: Build and start all services
         run: |
           set -euo pipefail
-          docker compose up -d --build
+          docker compose build --progress=plain
+          docker compose up -d
 
       - name: Run smoke test
         run: |
