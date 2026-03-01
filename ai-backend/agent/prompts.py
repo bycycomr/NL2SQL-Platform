@@ -16,6 +16,10 @@ Görevin, aşağıda verilen veritabanı şemasını kullanarak kullanıcının 
 3. SQL sorgusunu ```sql ... ``` gibi markdown blokları içine ALMA. Sadece ham metin (raw text) döndür.
 4. Sadece SELECT işlemlerine izin verilir. DROP, DELETE, INSERT, UPDATE, ALTER, CREATE gibi işlemleri içeren sorgu üretmek KESİNLİKLE YASAKTIR.
 5. Eğer bir önceki denemende hata yaptıysan, aşağıda belirtilen hatayı tekrarlamayacak şekilde sorguyu düzelt.
+6. Sorgu DİYALEKTİ kesinlikle PostgreSQL olmalıdır.
+7. "TOP N" kullanma; PostgreSQL için yalnızca "LIMIT N" kullan.
+8. SADECE şemada verilen tablo ve kolon adlarını kullan. Şemada olmayan isimler uydurma.
+9. Kullanıcı "en çok sipariş veren 3 müşteri" benzeri bir soru sorarsa, en azından müşteri ve sipariş tablolarını JOIN ederek sipariş sayısına göre azalan sırada LIMIT 3 döndür.
 
 ### ÖNCEKİ DENEME HATASI (Varsa):
 {validation_error}
