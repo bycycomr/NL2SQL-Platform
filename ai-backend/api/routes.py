@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 from agent.graph import agent
 from api.schemas import (
@@ -33,7 +34,6 @@ router = APIRouter(prefix="/api/v1", tags=["NL2SQL"])
     "/onboard/extract",
     response_model=ExtractSchemaResponse,
     summary="Step 1 – Auto-extract schema from a live database.",
-    tags=["Onboarding"],
 )
 async def extract_schema(request: ExtractSchemaRequest) -> ExtractSchemaResponse:
     """Connect to the target database, introspect tables & columns,
@@ -64,7 +64,6 @@ async def extract_schema(request: ExtractSchemaRequest) -> ExtractSchemaResponse
 @router.post(
     "/onboard/register",
     summary="Step 2 – Register enriched schema into the vector store.",
-    tags=["Onboarding"],
 )
 async def register_schema(request: RegisterSchemaRequest) -> dict:
     """Receive the human-enriched schema and persist it into ChromaDB."""
@@ -80,11 +79,27 @@ async def register_schema(request: RegisterSchemaRequest) -> dict:
         for t in request.tables
     ]
 
-    count = save_schema_chunks(
-        db_id=request.db_id,
-        tables=table_dicts,
-        few_shot_examples=request.few_shot_examples,
-    )
+    try:
+        count = save_schema_chunks(
+            db_id=request.db_id,
+            tables=table_dicts,
+            few_shot_examples=request.few_shot_examples,
+        )
+    except Exception as exc:
+        logger.error(
+            "register_schema failed | db_id=%s | error=%s",
+            request.db_id,
+            exc,
+            exc_info=True,
+        )
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "message": f"Schema registration failed: {exc}",
+                "db_id": request.db_id,
+            },
+        )
 
     return {"status": "registered", "db_id": request.db_id, "chunks_saved": count}
 
@@ -123,8 +138,14 @@ async def generate_sql(request: NL2SQLRequest) -> NL2SQLResponse:
 
     try:
         result = await agent.ainvoke(initial_state)
-    except Exception:
-        logger.exception("Agent pipeline failed")
+    except Exception as exc:
+        logger.error(
+            "Agent pipeline failed | db_id=%s | user_id=%s | error=%s",
+            request.db_id,
+            request.user_id,
+            exc,
+            exc_info=True,
+        )
         return NL2SQLResponse(
             sql_query=None,
             explanation=None,

@@ -6,10 +6,14 @@ be filtered at query time.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
+import math
+from contextlib import contextmanager
 from typing import Any
 
 import chromadb
+import httpx
 from chromadb.config import Settings as ChromaSettings
 
 from core.config import settings
@@ -21,6 +25,67 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _client: chromadb.ClientAPI | None = None
 _COLLECTION_NAME = "nl2sql_schemas"
+_HASH_EMBEDDING_DIM = 256
+
+
+class LocalHashEmbeddingFunction:
+    """Network-free embedding function for offline and constrained environments."""
+
+    def __call__(self, input: list[str]) -> list[list[float]]:
+        return [self._embed_text(text) for text in input]
+
+    def _embed_text(self, text: str) -> list[float]:
+        vector = [0.0] * _HASH_EMBEDDING_DIM
+        tokens = text.lower().split()
+
+        if not tokens:
+            return vector
+
+        for token in tokens:
+            digest = hashlib.sha256(token.encode("utf-8")).digest()
+            index = int.from_bytes(digest[:4], "big") % _HASH_EMBEDDING_DIM
+            sign = 1.0 if digest[4] % 2 == 0 else -1.0
+            vector[index] += sign
+
+        norm = math.sqrt(sum(value * value for value in vector))
+        if norm == 0:
+            return vector
+
+        return [value / norm for value in vector]
+
+
+_local_hash_embedding = LocalHashEmbeddingFunction()
+
+
+@contextmanager
+def _embedding_network_context():
+    """Patch HTTPX stream defaults for SSL/proxy constrained environments."""
+    use_patch = (
+        settings.CHROMA_EMBEDDING_MODE.lower() != "local_hash"
+        and (not settings.CHROMA_HTTP_VERIFY_SSL or not settings.CHROMA_HTTP_TRUST_ENV)
+    )
+
+    if not use_patch:
+        yield
+        return
+
+    original_stream = httpx.stream
+
+    def patched_stream(method: str, url: str, *args, **kwargs):
+        kwargs.setdefault("verify", settings.CHROMA_HTTP_VERIFY_SSL)
+        kwargs.setdefault("trust_env", settings.CHROMA_HTTP_TRUST_ENV)
+        return original_stream(method, url, *args, **kwargs)
+
+    httpx.stream = patched_stream
+    logger.warning(
+        "Chroma embedding download workaround active | verify_ssl=%s | trust_env=%s",
+        settings.CHROMA_HTTP_VERIFY_SSL,
+        settings.CHROMA_HTTP_TRUST_ENV,
+    )
+    try:
+        yield
+    finally:
+        httpx.stream = original_stream
 
 
 def _get_client() -> chromadb.ClientAPI:
@@ -36,6 +101,13 @@ def _get_client() -> chromadb.ClientAPI:
 
 
 def _get_collection() -> chromadb.Collection:
+    if settings.CHROMA_EMBEDDING_MODE.lower() == "local_hash":
+        return _get_client().get_or_create_collection(
+            name=_COLLECTION_NAME,
+            metadata={"hnsw:space": "cosine"},
+            embedding_function=_local_hash_embedding,
+        )
+
     return _get_client().get_or_create_collection(
         name=_COLLECTION_NAME,
         metadata={"hnsw:space": "cosine"},
@@ -75,7 +147,13 @@ def save_schema_chunks(
             metadatas.append({"db_id": db_id, "type": "few_shot"})
             ids.append(f"{db_id}_fewshot_{idx}")
 
-    collection.upsert(documents=documents, metadatas=metadatas, ids=ids)
+    try:
+        with _embedding_network_context():
+            collection.upsert(documents=documents, metadatas=metadatas, ids=ids)
+    except Exception as exc:
+        logger.exception("save_schema_chunks failed | db_id=%s", db_id)
+        raise RuntimeError(f"Vector store upsert failed: {exc}") from exc
+
     logger.info("save_schema_chunks | db_id=%s | saved %d docs", db_id, len(documents))
     return len(documents)
 
@@ -88,11 +166,16 @@ def retrieve_relevant_schema(db_id: str, question: str, top_k: int = 10) -> str:
     """
     collection = _get_collection()
 
-    results = collection.query(
-        query_texts=[question],
-        n_results=top_k,
-        where={"db_id": db_id},
-    )
+    try:
+        with _embedding_network_context():
+            results = collection.query(
+                query_texts=[question],
+                n_results=top_k,
+                where={"db_id": db_id},
+            )
+    except Exception as exc:
+        logger.exception("retrieve_relevant_schema failed | db_id=%s", db_id)
+        raise RuntimeError(f"Vector store query failed: {exc}") from exc
 
     if not results or not results["documents"] or not results["documents"][0]:
         logger.warning("retrieve_relevant_schema | no results for db_id=%s", db_id)
