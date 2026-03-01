@@ -7,16 +7,27 @@ uvicorn[standard]==0.34.0
 gunicorn==23.0.0
 
 # --- LLM / AI ---
-langchain==0.3.14
-langgraph==0.2.60
+langchain>=0.3.14,<0.4
+langchain-community>=0.3,<0.4
+langchain-core>=0.3,<0.4
+langgraph>=0.2.60,<0.3
 openai==1.58.1
 tiktoken==0.8.0
+
+# --- Local LLM ---
+langchain-ollama>=0.3,<0.4
+
+# --- SQL Validation ---
+sqlglot>=26,<27
 
 # --- Database ---
 sqlalchemy==2.0.36
 asyncpg==0.30.0
 psycopg2-binary==2.9.10
 alembic==1.14.1
+
+# --- Vector Store (RAG) ---
+chromadb>=0.5,<1
 
 # --- Caching ---
 redis==5.2.1
@@ -28,7 +39,9 @@ structlog==24.4.0
 
 # --- Security ---
 python-jose[cryptography]==3.3.0
-pydantic==2.10.4
+
+# --- Pydantic ---
+pydantic>=2.0,<3
 pydantic-settings==2.7.1
 
 # --- Utilities ---
