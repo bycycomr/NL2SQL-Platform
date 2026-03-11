@@ -1,17 +1,19 @@
+using NL2SQL.CoreBackend.Domain.Common;
+using NL2SQL.CoreBackend.Domain.Enums;
+
 namespace NL2SQL.CoreBackend.Domain.Entities;
 
-/// <summary>
-/// Kullanıcının doğal dil sorgusunun ve üretilen SQL'in geçmişini tutar.
-/// </summary>
-public class QueryHistory
+public class QueryHistory : BaseEntity
 {
-    public Guid Id { get; set; } = Guid.NewGuid();
     public Guid UserId { get; set; }
+    public string DbId { get; set; } = string.Empty;
     public string NaturalLanguageQuery { get; set; } = string.Empty;
     public string? GeneratedSql { get; set; }
-    public string ExecutionStatus { get; set; } = "pending";
+    public string? Explanation { get; set; }
+    public ExecutionStatus ExecutionStatus { get; set; } = ExecutionStatus.Pending;
     public int? ExecutionTimeMs { get; set; }
     public string? ErrorMessage { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public string? ResultDataJson { get; set; }
+
+    public User User { get; set; } = null!;
 }

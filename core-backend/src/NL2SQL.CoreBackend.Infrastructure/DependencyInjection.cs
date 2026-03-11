@@ -1,11 +1,15 @@
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using StackExchange.Redis;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
-using System.Text;
+using Polly;
+using Polly.Extensions.Http;
+using StackExchange.Redis;
+using NL2SQL.CoreBackend.Application.Common.Interfaces;
 using NL2SQL.CoreBackend.Infrastructure.Persistence;
+using NL2SQL.CoreBackend.Infrastructure.Services;
 
 namespace NL2SQL.CoreBackend.Infrastructure;
 
@@ -30,7 +34,12 @@ public static class DependencyInjection
                         maxRetryDelay: TimeSpan.FromSeconds(10),
                         errorCodesToAdd: null);
                     npgsql.CommandTimeout(30);
-                }));
+                })
+            .UseSnakeCaseNamingConvention());
+
+        // ─── Repository & UnitOfWork ───
+        services.AddScoped(typeof(IRepository<>), typeof(EfRepository<>));
+        services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         // ─── Redis (Distributed Cache) ───
         services.AddStackExchangeRedisCache(options =>
@@ -71,15 +80,51 @@ public static class DependencyInjection
 
         services.AddAuthorization();
 
-        // ─── HttpClient – AI Backend ───
-        services.AddHttpClient("AIBackend", client =>
+        // ─── Auth Services ───
+        services.AddScoped<IPasswordHasher, BcryptPasswordHasher>();
+        services.AddScoped<IJwtTokenService, JwtTokenService>();
+
+        // ─── HttpClient – AI Backend (Typed Client + Polly) ───
+        services.AddHttpClient<IAIBackendService, AIBackendService>(client =>
         {
             client.BaseAddress = new Uri(
                 configuration["AIBackend:BaseUrl"] ?? "http://ai-backend:8000");
             client.Timeout = TimeSpan.FromSeconds(120);
             client.DefaultRequestHeaders.Add("Accept", "application/json");
-        });
+        })
+        .AddPolicyHandler(GetRetryPolicy())
+        .AddPolicyHandler(GetCircuitBreakerPolicy());
 
         return services;
+    }
+
+    /// <summary>
+    /// 3 deneme, üstel geri çekilme (2s → 4s → 8s) + jitter
+    /// </summary>
+    private static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy()
+    {
+        return HttpPolicyExtensions
+            .HandleTransientHttpError()
+            .WaitAndRetryAsync(
+                retryCount: 3,
+                sleepDurationProvider: attempt =>
+                    TimeSpan.FromSeconds(Math.Pow(2, attempt))
+                    + TimeSpan.FromMilliseconds(Random.Shared.Next(0, 500)),
+                onRetry: (outcome, timespan, retryAttempt, _) =>
+                {
+                    // Polly retry loglama — Serilog pipeline'ından geçer
+                });
+    }
+
+    /// <summary>
+    /// 5 ardışık hata → 30 sn devre kesici
+    /// </summary>
+    private static IAsyncPolicy<HttpResponseMessage> GetCircuitBreakerPolicy()
+    {
+        return HttpPolicyExtensions
+            .HandleTransientHttpError()
+            .CircuitBreakerAsync(
+                handledEventsAllowedBeforeBreaking: 5,
+                durationOfBreak: TimeSpan.FromSeconds(30));
     }
 }
