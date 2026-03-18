@@ -32,6 +32,7 @@ from typing import Literal
 
 from langgraph.graph import END, START, StateGraph
 
+
 from agent.nodes import (
     execute_sql_node,
     explain_sql_node,
@@ -73,6 +74,31 @@ def _after_validation(state: AgentState) -> Literal["generate_sql", "execute_sql
     return END
 
 
+def _after_execution(state: AgentState) -> Literal["generate_sql", "explain_sql", "__end__"]:
+    """Route after ``execute_sql_node``.
+
+    * Execution OK  → explain_sql
+    * Execution failed AND retries left → generate_sql (model görüsün, hatasını düzeltsin)
+    * Retries exhausted → END
+    """
+    error = state.get("validation_error")
+    retries = state.get("retry_count", 0)
+
+    if error is None:
+        return "explain_sql"
+
+    if retries < settings.MAX_RETRY_COUNT:
+        logger.info(
+            "_after_execution | execution failed, retrying (%d/%d)",
+            retries,
+            settings.MAX_RETRY_COUNT,
+        )
+        return "generate_sql"
+
+    logger.warning("_after_execution | retries exhausted – ending with error")
+    return END
+
+
 # ---------------------------------------------------------------------------
 # Graph construction
 # ---------------------------------------------------------------------------
@@ -104,7 +130,16 @@ def build_graph() -> StateGraph:
         },
     )
 
-    builder.add_edge("execute_sql", "explain_sql")
+    # Conditional: after execution either retry, explain, or end
+    builder.add_conditional_edges(
+        "execute_sql",
+        _after_execution,
+        {
+            "generate_sql": "generate_sql",
+            "explain_sql": "explain_sql",
+            END: END,
+        },
+    )
     builder.add_edge("explain_sql", END)
 
     graph = builder.compile()

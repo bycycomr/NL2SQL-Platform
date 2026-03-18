@@ -21,6 +21,43 @@ from services.vector_store import retrieve_relevant_schema
 logger = logging.getLogger(__name__)
 
 
+def _build_execution_error_hint(exc: Exception, sql: str) -> str:
+    """Ham DB hatasını LLM'in anlayıp düzeltebileceği net bir mesaja çevirir."""
+    raw = str(exc)
+
+    # SQL Server: Invalid column name 'X'
+    bad_cols = re.findall(r"Invalid column name '(\w+)'", raw)
+    if bad_cols:
+        unique_cols = list(dict.fromkeys(bad_cols))
+        # Hangi tabloda kullanıldığını SQL'den bul
+        alias_table: dict[str, str] = {}
+        for m in re.finditer(r"(\w+\.\w+|\w+)\s+(?:AS\s+)?(\w+)\b", sql, re.IGNORECASE):
+            alias_table[m.group(2).lower()] = m.group(1)
+        hints = []
+        for col in unique_cols:
+            # Hangi alias/tablo bu kolonu kullandı?
+            col_aliases = re.findall(rf"\b(\w+)\.{col}\b", sql, re.IGNORECASE)
+            for alias in col_aliases:
+                tbl = alias_table.get(alias.lower(), alias)
+                hints.append(f"'{col}' kolonu '{tbl}' tablosunda YOKTUR")
+        hint_str = "; ".join(hints) if hints else f"{unique_cols} kolonları kullandığın tabloda yok"
+        return (
+            f"Execution hatası: {hint_str}. "
+            f"Şemayı tekrar incele — bu kolonlar başka bir tabloda olabilir. "
+            f"Her tablo için yalnızca şemada listelenen kolonları kullan."
+        )
+
+    # SQL Server: Invalid object name 'X' (tablo yok)
+    bad_objs = re.findall(r"Invalid object name '([^']+)'", raw)
+    if bad_objs:
+        return (
+            f"Execution hatası: {bad_objs} tablosu/nesnesi mevcut değil. "
+            f"Şemada yalnızca listelenen tablo adlarını kullan, isim uydurmak yasaktır."
+        )
+
+    return raw.splitlines()[0][:300]
+
+
 # ---------------------------------------------------------------------------
 # Node 1 – Retrieve relevant schema DDL from ChromaDB
 # ---------------------------------------------------------------------------
@@ -39,11 +76,27 @@ async def retrieve_schema_node(state: AgentState) -> dict:
 # ---------------------------------------------------------------------------
 # Node 2 – Generate SQL via LLM
 # ---------------------------------------------------------------------------
+def _detect_dialect(connection_string: str) -> str:
+    """Derive a human-readable SQL dialect name from the SQLAlchemy connection string."""
+    cs = (connection_string or "").lower()
+    if "mssql" in cs or "pyodbc" in cs or "sqlserver" in cs:
+        return "mssql (T-SQL)"
+    if "postgresql" in cs or "postgres" in cs:
+        return "postgresql"
+    if "mysql" in cs or "mariadb" in cs:
+        return "mysql"
+    if "sqlite" in cs:
+        return "sqlite"
+    return "postgresql"  # güvenli varsayılan
+
+
 async def generate_sql_node(state: AgentState) -> dict:
     """Call the configured LLM to generate SQL, fallback to heuristic SQL on failure."""
 
+    dialect = _detect_dialect(state.get("connection_string", ""))
     prompt_text = SQL_GENERATION_PROMPT.format(
         schema=state["relevant_schema"],
+        dialect=dialect,
         validation_error=state.get("validation_error") or "Yok",
         question=state["question"],
     )
@@ -123,10 +176,17 @@ async def execute_sql_node(state: AgentState) -> dict:
         inspector = DBInspector(connection_string)
         rows = inspector.execute_read_only(sql)
         inspector.dispose()
-        return {"execution_data": rows}
+        return {"execution_data": rows, "validation_error": None}
     except Exception as exc:
         logger.exception("execute_sql_node | execution failed")
-        return {"execution_data": None, "validation_error": f"Execution error: {exc}"}
+        retry = state.get("retry_count", 0) + 1
+        hint = _build_execution_error_hint(exc, sql)
+        logger.warning("execute_sql_node | retry_count=%s | error=%s", retry, hint)
+        return {
+            "execution_data": None,
+            "validation_error": hint,
+            "retry_count": retry,
+        }
 
 
 # ---------------------------------------------------------------------------
