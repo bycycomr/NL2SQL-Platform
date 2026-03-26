@@ -9,6 +9,7 @@ __pycache__/
 *.md
 docs/
 tests/
+_archive/
 .pytest_cache/
 .mypy_cache/
 .vscode/
@@ -20,3 +21,4 @@ docker-compose*.yml
 node_modules/
 .coverage
 htmlcov/
+.chroma_data/

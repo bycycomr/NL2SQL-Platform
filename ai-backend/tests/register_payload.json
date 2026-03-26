@@ -1,0 +1,50 @@
+{
+  "db_id": "adv_works_local",
+  "mode": "upsert",
+  "tables": [
+    {
+      "table_name": "SalesLT.Customer",
+      "columns": [{"name": "CustomerID","type": "INTEGER"},{"name": "FirstName","type": "NVARCHAR"},{"name": "LastName","type": "NVARCHAR"},{"name": "CompanyName","type": "NVARCHAR"},{"name": "EmailAddress","type": "NVARCHAR"}],
+      "human_description": "Müşteri bilgilerini tutan ana tablo.",
+      "business_rules": "Ad ve soyadı birleştirmek için FirstName + ' ' + LastName kullan."
+    },
+    {
+      "table_name": "SalesLT.SalesOrderHeader",
+      "columns": [{"name": "SalesOrderID","type": "INTEGER"},{"name": "OrderDate","type": "DATETIME"},{"name": "CustomerID","type": "INTEGER"},{"name": "TotalDue","type": "MONEY"},{"name": "Status","type": "TINYINT"}],
+      "human_description": "Satış siparişlerinin başlık bilgisi.",
+      "business_rules": "Status=5 tamamlanmış sipariş anlamına gelir. TotalDue toplam tutardır."
+    },
+    {
+      "table_name": "SalesLT.SalesOrderDetail",
+      "columns": [{"name": "SalesOrderID","type": "INTEGER"},{"name": "ProductID","type": "INTEGER"},{"name": "OrderQty","type": "SMALLINT"},{"name": "UnitPrice","type": "MONEY"},{"name": "LineTotal","type": "NUMERIC"}],
+      "human_description": "Sipariş kalemleri. Her siparişteki ürün, miktar ve fiyat bilgisi.",
+      "business_rules": "LineTotal = UnitPrice * OrderQty * (1 - UnitPriceDiscount)"
+    },
+    {
+      "table_name": "SalesLT.Product",
+      "columns": [{"name": "ProductID","type": "INTEGER"},{"name": "Name","type": "NVARCHAR"},{"name": "ListPrice","type": "MONEY"},{"name": "ProductCategoryID","type": "INTEGER"},{"name": "Color","type": "NVARCHAR"}],
+      "human_description": "Ürün kataloğu. Fiyat, renk ve kategori bilgisi içerir.",
+      "business_rules": "ListPrice satış fiyatıdır. Color sütunundaki değerler İngilizce'dir: 'Red', 'Blue', 'Black', 'Silver', 'Yellow', 'White', 'Multi' gibi. Türkçe renk adı kullanma."
+    },
+    {
+      "table_name": "SalesLT.ProductCategory",
+      "columns": [{"name": "ProductCategoryID","type": "INTEGER"},{"name": "Name","type": "NVARCHAR"},{"name": "ParentProductCategoryID","type": "INTEGER"}],
+      "human_description": "Ürün kategorileri hiyerarşisi.",
+      "business_rules": "ParentProductCategoryID NULL ise üst kategoridir."
+    }
+  ],
+  "few_shot_examples": [
+    {
+      "question": "En çok sipariş veren 5 müşteri kimdir?",
+      "query": "SELECT TOP 5 c.CustomerID, c.FirstName + ' ' + c.LastName AS CustomerName, COUNT(soh.SalesOrderID) AS OrderCount FROM SalesLT.Customer c JOIN SalesLT.SalesOrderHeader soh ON c.CustomerID = soh.CustomerID GROUP BY c.CustomerID, c.FirstName, c.LastName ORDER BY OrderCount DESC"
+    },
+    {
+      "question": "Toplam satış tutarı en yüksek ürün hangisi?",
+      "query": "SELECT TOP 1 p.Name, SUM(sod.LineTotal) AS TotalSales FROM SalesLT.Product p JOIN SalesLT.SalesOrderDetail sod ON p.ProductID = sod.ProductID GROUP BY p.Name ORDER BY TotalSales DESC"
+    },
+    {
+      "question": "Kaç farklı müşteri var?",
+      "query": "SELECT COUNT(*) AS TotalCustomers FROM SalesLT.Customer"
+    }
+  ]
+}

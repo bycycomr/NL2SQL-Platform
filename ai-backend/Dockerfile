@@ -22,7 +22,7 @@ FROM python:3.11-slim AS runtime
 # Labels
 LABEL maintainer="devops@nurolteknoloji.com" \
       description="NL2SQL AI Backend Service" \
-      version="1.0.0"
+      version="2.0.0"
 
 # Security: non-root user
 RUN groupadd -r appgroup && useradd -r -g appgroup -d /app -s /sbin/nologin appuser
@@ -59,14 +59,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 EXPOSE 8000
 
 # Gunicorn + Uvicorn workers (production)
-CMD ["gunicorn", "app.main:app", \
-     "--worker-class", "uvicorn.workers.UvicornWorker", \
-     "--workers", "2", \
-     "--bind", "0.0.0.0:8000", \
-     "--timeout", "120", \
-     "--graceful-timeout", "30", \
-     "--keep-alive", "5", \
-     "--max-requests", "1000", \
-     "--max-requests-jitter", "50", \
-     "--access-logfile", "-", \
-     "--error-logfile", "-"]
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "main:app"]

@@ -1,7 +1,7 @@
 # ============================================================
 # Gunicorn Configuration – AI Backend
 # Production-ready, GPU/CPU workload optimized
-# Usage: gunicorn -c gunicorn.conf.py app.main:app
+# Usage: gunicorn -c gunicorn.conf.py main:app
 # ============================================================
 import os
 

@@ -1,0 +1,68 @@
+version: "3.9"
+
+# ============================================================
+# NL2SQL AI Backend — Docker Compose
+#
+# Production:   docker compose up -d ai-backend
+# Development:  docker compose --profile dev up
+#
+# Requirements:
+#   - Ollama must be running (on host or as a container)
+#   - Copy .env.example to .env and fill in values
+# ============================================================
+
+services:
+
+  # ── AI Backend ─────────────────────────────────────────────
+  ai-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nl2sql-ai-backend:2.0.0
+    container_name: nl2sql-ai-backend
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      # When Ollama runs on the host machine, use host.docker.internal
+      LLM_BASE_URL: "${LLM_BASE_URL:-http://host.docker.internal:11434}"
+    volumes:
+      # Persist ChromaDB vector data between restarts
+      - chroma_data:/app/.chroma_data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    extra_hosts:
+      # Allow container to reach Ollama on the host (Linux)
+      - "host.docker.internal:host-gateway"
+
+  # ── Ollama (optional — use profile: ollama) ─────────────────
+  # Uncomment and use `docker compose --profile ollama up` to
+  # run Ollama in a container instead of on the host machine.
+  #
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: ollama
+  #   profiles: [ollama]
+  #   restart: unless-stopped
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama_models:/root/.ollama
+  #   # GPU support (NVIDIA): uncomment below
+  #   # deploy:
+  #   #   resources:
+  #   #     reservations:
+  #   #       devices:
+  #   #         - driver: nvidia
+  #   #           count: all
+  #   #           capabilities: [gpu]
+
+volumes:
+  chroma_data:
+  # ollama_models:

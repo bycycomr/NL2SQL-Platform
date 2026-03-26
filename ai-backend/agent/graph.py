@@ -47,6 +47,25 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Conditional edge: decide what happens after schema retrieval
+# ---------------------------------------------------------------------------
+def _after_retrieve(state: AgentState) -> Literal["generate_sql", "__end__"]:
+    """Route after ``retrieve_schema_node``.
+
+    * If schema exists → proceed to ``generate_sql``
+    * If schema missing (validation_error set) → END
+    """
+    error = state.get("validation_error")
+    schema = (state.get("relevant_schema") or "").strip()
+
+    if error and not schema:
+        logger.warning("_after_retrieve | missing schema – ending early")
+        return END
+
+    return "generate_sql"
+
+
+# ---------------------------------------------------------------------------
 # Conditional edge: decide what happens after validation
 # ---------------------------------------------------------------------------
 def _after_validation(state: AgentState) -> Literal["generate_sql", "execute_sql", "__end__"]:
@@ -116,7 +135,17 @@ def build_graph() -> StateGraph:
 
     # -- Edges --
     builder.add_edge(START, "retrieve_schema")
-    builder.add_edge("retrieve_schema", "generate_sql")
+
+    # Conditional: if schema missing, stop early with explicit error
+    builder.add_conditional_edges(
+        "retrieve_schema",
+        _after_retrieve,
+        {
+            "generate_sql": "generate_sql",
+            END: END,
+        },
+    )
+
     builder.add_edge("generate_sql", "validate_sql")
 
     # Conditional: after validation either loop, execute, or end
